@@ -1,16 +1,3 @@
-"""
-Уранічний бот — щоденні підказки на час ретроградного Урана.
-
-Модель монетизації (MVP, без інтеграції платіжного шлюзу):
-  1. Користувач тисне /subscribe і бачить реквізити для оплати (Monobank jar / LiqPay посилання).
-  2. Після оплати користувач тисне «Я оплатив» — заявка йде адміну.
-  3. Адмін підтверджує командою /approve <user_id>, після чого бот щодня надсилає підказку.
-
-Це навмисно просто: не потребує акаунту продавця в Stripe (складно з України),
-можна запустити за один вечір. Пізніше легко замінити крок 2-3 на Telegram Stars
-або LiqPay/Fondy API для автоматизації.
-"""
-
 import json
 import logging
 import os
@@ -21,12 +8,14 @@ from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    Message, CallbackQuery, InlineKeyboardButton,
+    ReplyKeyboardMarkup, KeyboardButton,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
 
-# ---------- НАЛАШТУВАННЯ ----------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "ВСТАВ_СЮДИ_ТОКЕН_ВІД_BOTFATHER")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))
 PAYMENT_INFO = os.getenv(
@@ -40,6 +29,14 @@ TIPS_PATH = Path(__file__).parent / "tips.json"
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+MAIN_MENU = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="Підказка")],
+        [KeyboardButton(text="Підписка"), KeyboardButton(text="Статус")],
+    ],
+    resize_keyboard=True,
+)
 
 
 def init_db():
@@ -101,21 +98,23 @@ async def cmd_start(message: Message):
     text = (
         "Привіт! Я Уранічний бот. Ретроградний Уран стартує 6-10 вересня 2026 "
         "і триватиме до лютого 2027. Я надсилатиму тобі коротку щоденну підказку.\n\n"
-        "Команди:\n"
+        "Обирай кнопку знизу або команди:\n"
         "/subscribe - оформити підписку\n"
         "/tip - отримати підказку зараз\n"
         "/status - перевірити статус підписки"
     )
-    await message.answer(text)
+    await message.answer(text, reply_markup=MAIN_MENU)
 
 
 @dp.message(Command("tip"))
+@dp.message(F.text == "Підказка")
 async def cmd_tip_demo(message: Message):
     tip = random.choice(TIPS)
     await message.answer(tip)
 
 
 @dp.message(Command("subscribe"))
+@dp.message(F.text == "Підписка")
 async def cmd_subscribe(message: Message):
     add_pending(message.from_user.id, message.from_user.username or "")
     kb = InlineKeyboardBuilder()
@@ -135,18 +134,19 @@ async def cb_paid(callback: CallbackQuery):
 
 
 @dp.message(Command("status"))
+@dp.message(F.text == "Статус")
 async def cmd_status(message: Message):
     conn = sqlite3.connect(DB_PATH)
     row = conn.execute("SELECT status FROM subscribers WHERE user_id=?", (message.from_user.id,)).fetchone()
     conn.close()
     if not row:
-        await message.answer("Ти ще не оформлював підписку. Тисни /subscribe")
+        await message.answer("Ти ще не оформлював підписку. Тисни Підписка")
     elif row[0] == "pending":
         await message.answer("Оплата в очікуванні підтвердження адміном.")
     elif row[0] == "active":
         await message.answer("Підписка активна. Щоденні підказки надходитимуть о 9:00.")
     else:
-        await message.answer("Підписка неактивна. Тисни /subscribe щоб відновити.")
+        await message.answer("Підписка неактивна. Тисни Підписка щоб відновити.")
 
 
 @dp.message(Command("approve"))
