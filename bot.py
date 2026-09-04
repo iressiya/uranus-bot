@@ -100,4 +100,4 @@ async def cmd_start(message: Message):
         "/tip - отримати підказку зараз\n"
         "/status - перевірити статус підписки"
     )
-    await
+    
